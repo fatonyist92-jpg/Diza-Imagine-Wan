@@ -17,7 +17,7 @@ go.onclick=async()=>{
  go.disabled=true;result.innerHTML='';prog(5,'Connecting to Wan 2.2…');
  const negative='色调艳丽, 过曝, 静态, 细节模糊不清, 字幕, 最差质量, 低质量, JPEG压缩残留, 畸形的, 静止不动的画面';
  try{
-   const app=await Client.connect("zerogpu-aoti/wan2-2-fp8da-aoti-faster",{events:["status","data"]});
+   const app=await Client.connect("https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",{events:["status","data"]});
    prog(15,'Submitting to ZeroGPU…');
    const job=app.submit("/generate_video",[
      handle_file(file.files[0]),
