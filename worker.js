@@ -17,9 +17,21 @@ export default {
         return new Response(APP_HTML, { headers: { ...cors, "Content-Type": "text/html; charset=UTF-8", "Cache-Control": "no-store" } });
       }
       if (request.method === "GET" && url.pathname === "/health") {
-        return json({ ok: true, build: "AUTH-RUN-V6", hf_auth: Boolean(env.HF_TOKEN) });
+        return json({ ok: true, build: "AUTH-RUN-V7", hf_auth: Boolean(env.HF_TOKEN) });
       }
       if (!env.HF_TOKEN) return json({ error: "HF_TOKEN secret missing" }, 500);
+
+      if (request.method === "GET" && url.pathname === "/selftest-upload") {
+        const fd = new FormData();
+        fd.append("files", new Blob(["diza"], { type: "text/plain" }), "diza.txt");
+        const r = await fetch(HF + "/gradio_api/upload", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${env.HF_TOKEN}` },
+          body: fd
+        });
+        const t = await r.text();
+        return json({ status: r.status, ok: r.ok, body: t.slice(0,800) }, r.ok ? 200 : 502);
+      }
 
       if (request.method === "POST" && url.pathname === "/upload") {
         const incoming = await request.formData();
