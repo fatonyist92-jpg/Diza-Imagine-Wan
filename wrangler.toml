@@ -1,3 +1,5 @@
 name = "throbbing-scene-03a4"
 main = "worker.js"
 compatibility_date = "2026-09-27"
+
+keep_vars = true
