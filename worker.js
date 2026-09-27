@@ -47,6 +47,26 @@ export default {
         return proxyText(r);
       }
 
+      if (request.method === "POST" && url.pathname === "/queue-join") {
+        const body = await request.text();
+        const r = await fetch(HF + "/gradio_api/queue/join", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.HF_TOKEN}`, "x-gradio-user": "api" },
+          body
+        });
+        return proxyText(r);
+      }
+
+      if (request.method === "GET" && url.pathname === "/queue-data") {
+        const sessionHash = url.searchParams.get("session_hash");
+        if (!sessionHash) return json({ error: "session_hash missing" }, 400);
+        const r = await fetch(HF + "/gradio_api/queue/data?session_hash=" + encodeURIComponent(sessionHash), {
+          headers: { Authorization: `Bearer ${env.HF_TOKEN}`, Accept: "text/event-stream", "x-gradio-user": "api" }
+        });
+        if (!r.ok) return json({ error: (await r.text()).slice(0,1200), provider_status: r.status }, r.status);
+        return new Response(r.body, { status: 200, headers: { ...cors, "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-store, no-cache", "X-Accel-Buffering": "no" } });
+      }
+
       if (request.method === "POST" && url.pathname === "/run") {
         const body = await request.text();
         const r = await fetch(HF + "/gradio_api/run/generate_video", {
