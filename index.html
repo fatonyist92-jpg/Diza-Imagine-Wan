@@ -25,9 +25,9 @@ try{
  prog(30,'Wan GPU queue…');
  const er=await fetch(relay+'/result/'+encodeURIComponent(id));
  if(!er.ok)throw Error('result HTTP '+er.status+' '+(await er.text()).slice(0,140));
- const reader=er.body.getReader(),dec=new TextDecoder();let buf='',payload=null;
- while(true){const {done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const blocks=buf.split('\n\n');buf=blocks.pop();for(const b of blocks){const ev=(b.match(/^event:\s*(.+)$/m)||[])[1];const d=(b.match(/^data:\s*(.+)$/m)||[])[1];if(ev==='error')throw Error('provider event error'+(d&&d!=='null'?': '+d:''));if(ev==='complete'){if(!d||d==='null')throw Error('provider completed with null result');try{payload=JSON.parse(d)}catch(_){throw Error('invalid completion payload: '+String(d).slice(0,160))}break}if(ev==='generating')prog(65,'Wan generating video…')}if(payload)break}
- if(!payload)throw Error('stream ended without video');
+ const reader=er.body.getReader(),dec=new TextDecoder();let buf='',payload=null,rawSSE='';
+ while(true){const {done,value}=await reader.read();if(done)break;const chunk=dec.decode(value,{stream:true});rawSSE+=chunk;buf+=chunk;const blocks=buf.split('\n\n');buf=blocks.pop();for(const b of blocks){const ev=(b.match(/^event:\s*(.+)$/m)||[])[1];const d=(b.match(/^data:\s*(.+)$/m)||[])[1];if(ev==='error')throw Error('provider event error | event_id='+id+' | data='+(d||'(empty)')+' | raw='+rawSSE.slice(-500).replace(/\s+/g,' '));if(ev==='complete'){if(!d||d==='null')throw Error('provider completed with null result');try{payload=JSON.parse(d)}catch(_){throw Error('invalid completion payload: '+String(d).slice(0,160))}break}if(ev==='generating')prog(65,'Wan generating video…')}if(payload)break}
+ if(!payload)throw Error('stream ended without video | event_id='+id+' | raw='+rawSSE.slice(-500).replace(/\s+/g,' '));
  let v=null;const walk=o=>{if(v)return;if(typeof o==='string'&&/\.(mp4|webm)(\?|$)/i.test(o))v=o;else if(o&&typeof o==='object'){if(typeof o.url==='string')v=o.url;else Object.values(o).forEach(walk)}};walk(payload);
  if(!v)throw Error('No MP4 URL returned');
  result.innerHTML='<video controls autoplay loop playsinline src="'+v+'"></video><div class="row"><span class="muted">MP4 ready</span><a class="pill" style="color:#fff;text-decoration:none" target="_blank" href="'+v+'">Open MP4</a></div>';prog(100,'MP4 ready ✓');
