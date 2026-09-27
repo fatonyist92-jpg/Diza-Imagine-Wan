@@ -17,7 +17,7 @@ export default {
         return new Response(APP_HTML, { headers: { ...cors, "Content-Type": "text/html; charset=UTF-8", "Cache-Control": "no-store" } });
       }
       if (request.method === "GET" && url.pathname === "/health") {
-        return json({ ok: true, build: "AUTH-STREAM-V4", hf_auth: Boolean(env.HF_TOKEN) });
+        return json({ ok: true, build: "AUTH-RUN-V5", hf_auth: Boolean(env.HF_TOKEN) });
       }
       if (!env.HF_TOKEN) return json({ error: "HF_TOKEN secret missing" }, 500);
 
@@ -31,6 +31,16 @@ export default {
           method: "POST",
           headers: { Authorization: `Bearer ${env.HF_TOKEN}` },
           body: form
+        });
+        return proxyText(r);
+      }
+
+      if (request.method === "POST" && url.pathname === "/run") {
+        const body = await request.text();
+        const r = await fetch(HF + "/gradio_api/run/generate_video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.HF_TOKEN}` },
+          body
         });
         return proxyText(r);
       }
