@@ -8,22 +8,22 @@
 const file=document.querySelector('#file'),drop=document.querySelector('#drop'),preview=document.querySelector('#preview'),hint=document.querySelector('#hint'),go=document.querySelector('#go'),status=document.querySelector('#status'),result=document.querySelector('#result'),progress=document.querySelector('#progress'),bar=document.querySelector('#bar');const prog=(n,t)=>{progress.classList.add('on');bar.style.width=Math.max(0,Math.min(100,n))+'%';status.textContent=n+'% · '+t};
 drop.onclick=()=>file.click();file.onchange=()=>{if(!file.files[0])return;preview.src=URL.createObjectURL(file.files[0]);preview.hidden=false;hint.hidden=true}
 go.onclick=async()=>{const p=document.querySelector('#prompt').value.trim();if(!file.files[0]||!p){status.textContent='Upload image dan isi prompt dulu.';return}go.disabled=true;result.innerHTML='';prog(5,'Preparing image…');
-const base='https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space';
+const relay='https://throbbing-scene-03a4.fatonyist-92.workers.dev';const hf='https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space';
 const negative='色调艳丽, 过曝, 静态, 细节模糊不清, 字幕, 最差质量, 低质量, JPEG压缩残留, 畸形的, 静止不动的画面';
 try{
  const fd=new FormData();fd.append('files',file.files[0]);
  prog(12,'Uploading image to Wan…');
- const ur=await fetch(base+'/gradio_api/upload',{method:'POST',body:fd});
+ const ur=await fetch(relay+'/upload',{method:'POST',body:fd});
  if(!ur.ok)throw Error('upload HTTP '+ur.status+' '+(await ur.text()).slice(0,120));
- const uj=await ur.json(); const up=Array.isArray(uj)?uj[0]:(uj.files?.[0]||uj.path||uj);
- if(!up)throw Error('upload returned no file path');
- const fileData={path:up,url:base+'/gradio_api/file='+encodeURIComponent(up),orig_name:file.files[0].name,size:file.files[0].size,mime_type:file.files[0].type||null,is_stream:false,meta:{_type:'gradio.FileData'}};
+ const uj=await ur.json(); const raw=Array.isArray(uj)?uj[0]:(uj.files?.[0]||uj.path||uj);const up=typeof raw==='string'?raw:(raw&&raw.path);const upUrl=(raw&&typeof raw==='object'&&raw.url)?raw.url:(up?hf+'/gradio_api/file='+encodeURIComponent(up):null);
+ if(!up)throw Error('upload returned no file path: '+JSON.stringify(uj).slice(0,160));
+ const fileData={path:up,url:upUrl,orig_name:file.files[0].name,size:file.files[0].size,mime_type:file.files[0].type||null,is_stream:false,meta:{_type:'gradio.FileData'}};
  prog(20,'Submitting Wan 2.2 job…');
- const sr=await fetch(base+'/gradio_api/call/generate_video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:[fileData,p,6,negative,5,1,1,42,true]})});
+ const sr=await fetch(relay+'/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:[fileData,p,6,negative,5,1,1,42,true]})});
  if(!sr.ok)throw Error('submit HTTP '+sr.status+' '+(await sr.text()).slice(0,140));
  const sj=await sr.json();const id=sj.event_id;if(!id)throw Error('no event_id returned');
  prog(30,'Wan GPU queue…');
- const er=await fetch(base+'/gradio_api/call/generate_video/'+encodeURIComponent(id));
+ const er=await fetch(relay+'/result/'+encodeURIComponent(id));
  if(!er.ok)throw Error('result HTTP '+er.status+' '+(await er.text()).slice(0,140));
  const reader=er.body.getReader(),dec=new TextDecoder();let buf='',payload=null;
  while(true){const {done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const blocks=buf.split('\n\n');buf=blocks.pop();for(const b of blocks){const ev=(b.match(/^event:\s*(.+)$/m)||[])[1];const d=(b.match(/^data:\s*(.+)$/m)||[])[1];if(ev==='error')throw Error('provider event error'+(d&&d!=='null'?': '+d:''));if(ev==='complete'){if(!d||d==='null')throw Error('provider completed with null result');try{payload=JSON.parse(d)}catch(_){throw Error('invalid completion payload: '+String(d).slice(0,160))}break}if(ev==='generating')prog(65,'Wan generating video…')}if(payload)break}
@@ -31,5 +31,5 @@ try{
  let v=null;const walk=o=>{if(v)return;if(typeof o==='string'&&/\.(mp4|webm)(\?|$)/i.test(o))v=o;else if(o&&typeof o==='object'){if(typeof o.url==='string')v=o.url;else Object.values(o).forEach(walk)}};walk(payload);
  if(!v)throw Error('No MP4 URL returned');
  result.innerHTML='<video controls autoplay loop playsinline src="'+v+'"></video><div class="row"><span class="muted">MP4 ready</span><a class="pill" style="color:#fff;text-decoration:none" target="_blank" href="'+v+'">Open MP4</a></div>';prog(100,'MP4 ready ✓');
-}catch(e){const msg=(e&&e.message)?e.message:(typeof e==='string'?e:JSON.stringify(e));status.textContent='Wan REST failed: '+String(msg||'unknown error').slice(0,300);progress.classList.remove('on')}finally{go.disabled=false}}
+}catch(e){const msg=(e&&e.message)?e.message:(typeof e==='string'?e:JSON.stringify(e));status.textContent='Wan relay failed: '+String(msg||'unknown error').slice(0,300);progress.classList.remove('on')}finally{go.disabled=false}}
 </script></body></html>
