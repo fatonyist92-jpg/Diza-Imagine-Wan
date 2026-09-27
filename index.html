@@ -3,7 +3,7 @@
 </style></head><body><main><div class="brand">DIZA IMAGINE <span class="pill">WAN 2.2 · I2V</span></div><div class="panel">
 <label class="drop" id="drop"><span id="hint"><b>Upload image</b><br><span class="muted">JPG / PNG / WEBP</span></span><img id="preview" hidden></label><input id="file" type="file" accept="image/*" hidden>
 <textarea id="prompt" placeholder="Describe the motion..."></textarea><button id="go">Generate video</button><div class="progress" id="progress"><i id="bar"></i></div><div class="status" id="status"></div><div class="result" id="result"></div>
-</div><div class="muted" style="text-align:center;margin-top:12px">AUTH-STREAM-V4</div></main><script type="module">
+</div><div class="muted" style="text-align:center;margin-top:12px">AUTH-RUN-V5</div></main><script type="module">
 const file=document.querySelector('#file'),drop=document.querySelector('#drop'),preview=document.querySelector('#preview'),hint=document.querySelector('#hint'),go=document.querySelector('#go'),status=document.querySelector('#status'),result=document.querySelector('#result'),progress=document.querySelector('#progress'),bar=document.querySelector('#bar');
 const prog=(n,t)=>{progress.classList.add('on');bar.style.width=Math.max(0,Math.min(100,n))+'%';status.textContent=n+'% · '+t};
 drop.onclick=()=>file.click();
@@ -14,64 +14,44 @@ go.onclick=async()=>{
  if(!file.files[0]||!p){status.textContent='Upload image dan isi prompt dulu.';return}
  go.disabled=true;result.innerHTML='';prog(5,'Preparing image…');
  const relay=location.origin;
- const hf='https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space';
  const negative='色调艳丽, 过曝, 静态, 细节模糊不清, 字幕, 最差质量, 低质量, JPEG压缩残留, 畸形的, 静止不动的画面';
  try{
    const fd=new FormData();fd.append('image',file.files[0]);
    prog(12,'Authenticated upload…');
    const ur=await fetch(relay+'/upload',{method:'POST',body:fd});
-   if(!ur.ok)throw Error('upload HTTP '+ur.status+' '+(await ur.text()).slice(0,220));
+   if(!ur.ok)throw Error('upload HTTP '+ur.status+' '+(await ur.text()).slice(0,250));
    const uj=await ur.json();
    const raw=Array.isArray(uj)?uj[0]:(uj.files?.[0]||uj.path||uj);
    const up=typeof raw==='string'?raw:(raw&&raw.path);
-   if(!up)throw Error('upload returned no file path: '+JSON.stringify(uj).slice(0,220));
+   if(!up)throw Error('upload returned no file path: '+JSON.stringify(uj).slice(0,250));
    const fileData={path:up,orig_name:file.files[0].name,meta:{_type:'gradio.FileData'}};
 
-   prog(20,'Submitting authenticated Wan job…');
-   const sr=await fetch(relay+'/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:[fileData,p,6,negative,5,1,1,42,true]})});
-   if(!sr.ok)throw Error('submit HTTP '+sr.status+' '+(await sr.text()).slice(0,260));
-   const sj=await sr.json();
-   const id=sj.event_id;
-   if(!id)throw Error('no event_id returned: '+JSON.stringify(sj).slice(0,220));
-
-   prog(30,'Wan GPU queue…');
-   const rr=await fetch(relay+'/stream/'+encodeURIComponent(id),{cache:'no-store'});
-   if(!rr.ok)throw Error('stream HTTP '+rr.status+' '+(await rr.text()).slice(0,300));
-   if(!rr.body)throw Error('stream body missing');
-
-   const reader=rr.body.getReader(),decoder=new TextDecoder();
-   let buf='',payload=null;
-   while(true){
-     const {done,value}=await reader.read();
-     if(done)break;
-     buf+=decoder.decode(value,{stream:true});
-     const blocks=buf.split(/\n\n/);
-     buf=blocks.pop()||'';
-     for(const block of blocks){
-       const em=block.match(/(?:^|\n)event:\s*([^\n\r]+)/);
-       const dm=block.match(/(?:^|\n)data:\s*([\s\S]*)/);
-       const ev=em?em[1].trim():'';
-       const ds=dm?dm[1].trim():'';
-       if(ev==='generating'||ev==='progress')prog(65,'Wan generating video…');
-       else if(ev==='heartbeat'||ev==='pending')prog(35,'Wan GPU queue…');
-       else if(ev==='error')throw Error('provider error: '+ds.slice(0,350));
-       else if(ev==='complete'){
-         try{payload=JSON.parse(ds)}catch{payload=ds}
-         prog(90,'Finalizing MP4…');
-       }
-     }
-   }
-   if(!payload)throw Error('stream ended without complete result');
+   prog(35,'Wan GPU processing…');
+   const rr=await fetch(relay+'/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+     input_image:fileData,
+     prompt:p,
+     steps:6,
+     negative_prompt:negative,
+     duration_seconds:5,
+     guidance_scale:1,
+     guidance_scale_2:1,
+     seed:42,
+     randomize_seed:true
+   })});
+   const txt=await rr.text();
+   if(!rr.ok)throw Error('provider HTTP '+rr.status+' '+txt.slice(0,450));
+   let payload;try{payload=JSON.parse(txt)}catch{throw Error('invalid provider response: '+txt.slice(0,450))}
+   prog(90,'Finalizing MP4…');
 
    let v=null;
    const walk=o=>{if(v)return;if(typeof o==='string'&&/\.(mp4|webm)(\?|$)/i.test(o))v=o;else if(o&&typeof o==='object'){if(typeof o.url==='string'&&/\.(mp4|webm)(\?|$)/i.test(o.url))v=o.url;else Object.values(o).forEach(walk)}};
    walk(payload);
-   if(!v)throw Error('No MP4 URL returned: '+JSON.stringify(payload).slice(0,350));
+   if(!v)throw Error('No MP4 URL returned: '+JSON.stringify(payload).slice(0,450));
    result.innerHTML='<video controls autoplay loop playsinline src="'+v+'"></video><div class="row"><span class="muted">MP4 ready</span><a class="pill" style="color:#fff;text-decoration:none" target="_blank" href="'+v+'">Open MP4</a></div>';
    prog(100,'MP4 ready ✓');
  }catch(e){
    const msg=(e&&e.message)?e.message:String(e||'unknown error');
-   status.textContent='Wan failed: '+msg.slice(0,600);progress.classList.remove('on');
+   status.textContent='Wan failed: '+msg.slice(0,650);progress.classList.remove('on');
  }finally{go.disabled=false}
 };
 </script></body></html>
