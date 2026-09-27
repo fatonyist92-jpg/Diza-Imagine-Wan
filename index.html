@@ -4,9 +4,32 @@
 <label class="drop" id="drop"><span id="hint"><b>Upload image</b><br><span class="muted">JPG / PNG / WEBP</span></span><img id="preview" hidden></label><input id="file" type="file" accept="image/*" hidden>
 <textarea id="prompt" placeholder="Describe the motion..."></textarea><button id="go">Generate video</button><div class="progress" id="progress"><i id="bar"></i></div><div class="status" id="status"></div><div class="result" id="result"></div>
 </div></main><script type="module">
-import { Client, handle_file } from "https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js";
+
 const file=document.querySelector('#file'),drop=document.querySelector('#drop'),preview=document.querySelector('#preview'),hint=document.querySelector('#hint'),go=document.querySelector('#go'),status=document.querySelector('#status'),result=document.querySelector('#result'),progress=document.querySelector('#progress'),bar=document.querySelector('#bar');const prog=(n,t)=>{progress.classList.add('on');bar.style.width=Math.max(0,Math.min(100,n))+'%';status.textContent=n+'% · '+t};
 drop.onclick=()=>file.click();file.onchange=()=>{if(!file.files[0])return;preview.src=URL.createObjectURL(file.files[0]);preview.hidden=false;hint.hidden=true}
-go.onclick=async()=>{const p=document.querySelector('#prompt').value.trim();if(!file.files[0]||!p){status.textContent='Upload image dan isi prompt dulu.';return}go.disabled=true;result.innerHTML='';prog(5,'Connecting Wan 2.2…');
-try{const providers=["zerogpu-aoti/wan2-2-fp8da-aoti-faster","r3gm/wan2-2-fp8da-aoti-preview","r3gm/wan2-2-fp8da-aoti-preview2"];prog(10,'Selecting Wan provider…');const negative='色调艳丽, 过曝, 静态, 细节模糊不清, 字幕, 最差质量, 低质量, JPEG压缩残留, 畸形的, 静止不动的画面';let r=null,lastErr=null;for(let i=0;i<providers.length&&!r;i++){try{prog(15+i*5,'Connecting provider '+(i+1)+'/'+providers.length+'…');const app=await Promise.race([Client.connect(providers[i]),new Promise((_,rej)=>setTimeout(()=>rej(Error('connect timeout')),8000))]);const job=app.submit('/generate_video',[handle_file(file.files[0]),p,6,negative,5,1,1,42,true]);for await(const msg of job){if(msg.type==='status'){const q=msg.position!=null?' · queue '+(msg.position+1):'';prog(30+i*5,'Provider '+(i+1)+' GPU queue'+q)}else if(msg.type==='data'){prog(90,'Processing MP4…');r={data:msg.data};break}}}catch(e){lastErr=e;prog(20+i*8,'Provider '+(i+1)+' unavailable, switching…')}}if(!r)throw Error('All Wan providers unavailable'+(lastErr?': '+(lastErr.message||lastErr):''));let x=r.data;let v=null;const walk=o=>{if(v)return;if(typeof o==='string'&&/\.(mp4|webm)(\?|$)/i.test(o))v=o;else if(o&&typeof o==='object'){if(o.url)v=o.url;else if(o.path&&/^https?:/.test(o.path))v=o.path;else Object.values(o).forEach(walk)}};walk(x);if(!v)throw Error('No video URL returned');result.innerHTML='<video controls autoplay loop playsinline src="'+v+'"></video><div class="row"><span class="muted">MP4 ready</span><a class="pill" style="color:#fff;text-decoration:none" target="_blank" href="'+v+'">Open MP4</a></div>';prog(100,'MP4 ready ✓')}catch(e){status.textContent='Generation failed: '+String(e.message||e).slice(0,220)}finally{go.disabled=false;if(!result.innerHTML)setTimeout(()=>progress.classList.remove('on'),1200)}}
+go.onclick=async()=>{const p=document.querySelector('#prompt').value.trim();if(!file.files[0]||!p){status.textContent='Upload image dan isi prompt dulu.';return}go.disabled=true;result.innerHTML='';prog(5,'Preparing image…');
+const base='https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space';
+const negative='色调艳丽, 过曝, 静态, 细节模糊不清, 字幕, 最差质量, 低质量, JPEG压缩残留, 畸形的, 静止不动的画面';
+try{
+ const fd=new FormData();fd.append('files',file.files[0]);
+ prog(12,'Uploading image to Wan…');
+ const ur=await fetch(base+'/gradio_api/upload',{method:'POST',body:fd});
+ if(!ur.ok)throw Error('upload HTTP '+ur.status+' '+(await ur.text()).slice(0,120));
+ const uj=await ur.json(); const up=Array.isArray(uj)?uj[0]:(uj.files?.[0]||uj.path||uj);
+ if(!up)throw Error('upload returned no file path');
+ const fileData={path:up,url:base+'/gradio_api/file='+encodeURIComponent(up),orig_name:file.files[0].name,size:file.files[0].size,mime_type:file.files[0].type||null,is_stream:false,meta:{_type:'gradio.FileData'}};
+ prog(20,'Submitting Wan 2.2 job…');
+ const sr=await fetch(base+'/gradio_api/call/generate_video',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:[fileData,p,6,negative,5,1,1,42,true]})});
+ if(!sr.ok)throw Error('submit HTTP '+sr.status+' '+(await sr.text()).slice(0,140));
+ const sj=await sr.json();const id=sj.event_id;if(!id)throw Error('no event_id returned');
+ prog(30,'Wan GPU queue…');
+ const er=await fetch(base+'/gradio_api/call/generate_video/'+encodeURIComponent(id));
+ if(!er.ok)throw Error('result HTTP '+er.status+' '+(await er.text()).slice(0,140));
+ const reader=er.body.getReader(),dec=new TextDecoder();let buf='',payload=null;
+ while(true){const {done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const blocks=buf.split('\n\n');buf=blocks.pop();for(const b of blocks){const ev=(b.match(/^event:\s*(.+)$/m)||[])[1];const d=(b.match(/^data:\s*(.+)$/m)||[])[1];if(ev==='error')throw Error(d||'Wan provider error');if(ev==='complete'&&d){payload=JSON.parse(d);break}if(ev==='generating')prog(65,'Wan generating video…')}if(payload)break}
+ if(!payload)throw Error('stream ended without video');
+ let v=null;const walk=o=>{if(v)return;if(typeof o==='string'&&/\.(mp4|webm)(\?|$)/i.test(o))v=o;else if(o&&typeof o==='object'){if(typeof o.url==='string')v=o.url;else Object.values(o).forEach(walk)}};walk(payload);
+ if(!v)throw Error('No MP4 URL returned');
+ result.innerHTML='<video controls autoplay loop playsinline src="'+v+'"></video><div class="row"><span class="muted">MP4 ready</span><a class="pill" style="color:#fff;text-decoration:none" target="_blank" href="'+v+'">Open MP4</a></div>';prog(100,'MP4 ready ✓');
+}catch(e){status.textContent='Wan REST failed: '+String(e.message||e).slice(0,240);progress.classList.remove('on')}finally{go.disabled=false}}
 </script></body></html>
